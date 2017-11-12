@@ -4,7 +4,12 @@ require_once 'vendor/autoload.php';
 $loop = React\EventLoop\Factory::create();
 $client = initializeClient($loop);
 
-$urls = getSitemapData($argv[1], $argv[2]);
+$requestLimit = $argv[2] ?? null;
+if (empty($argv[1])) {
+    echo 'Please specify url to sitemap.xml' . PHP_EOL;
+    die;
+}
+$urls = getSitemapData($argv[1], $requestLimit);
 if (isset($argv[2])) {
     $chunks = $urls;
     foreach ($chunks as $chunk) {
