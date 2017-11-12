@@ -2,24 +2,63 @@
 require_once 'vendor/autoload.php';
 
 $loop = React\EventLoop\Factory::create();
-$urls= [];
-$sitemap = simplexml_load_file($argv[1]);
-foreach ($sitemap as $element) {
-    $urls[] = $element->loc;
-}
-$dnsResolverFactory = new React\Dns\Resolver\Factory();
-$dnsResolver = $dnsResolverFactory->createCached('8.8.8.8', $loop);
+$client = initializeClient($loop);
 
-$factory = new React\HttpClient\Factory();
-$client = $factory->create($loop, $dnsResolver);
-
-foreach ($urls as $url) {
-    $request = $client->request('GET', $url);
-    $request->on('response', function (\React\HttpClient\Response $response) use ($url) {
-        $code = $response->getCode();
-        $reason = $response->getReasonPhrase();
-        echo $url . ' - ' . $code . ' ' . $reason . PHP_EOL;
-    });
-    $request->end();
+$urls = getSitemapData($argv[1], $argv[2]);
+if (isset($argv[2])) {
+    $chunks = $urls;
+    foreach ($chunks as $chunk) {
+        sendRequests($chunk, $client, $loop);
+    }
+} else {
+    sendRequests($urls, $client, $loop);
 }
-$loop->run();
+/**
+ * @param array $chunk
+ * @param \React\HttpClient\Client $client
+ * @param \React\EventLoop\StreamSelectLoop $loop
+ */
+function sendRequests(array $chunk, \React\HttpClient\Client $client, \React\EventLoop\StreamSelectLoop $loop)
+{
+    foreach ($chunk as $url) {
+        $request = $client->request('GET', $url);
+        $request->on('response', function (\React\HttpClient\Response $response) use ($url) {
+            $code = $response->getCode();
+            $reason = $response->getReasonPhrase();
+            echo $url . ' - ' . $code . ' ' . $reason . PHP_EOL;
+        });
+        $request->end();
+    }
+    $loop->run();
+}
+
+/**
+ * @param \React\EventLoop\StreamSelectLoop $loop
+ * @return \React\HttpClient\Client
+ */
+function initializeClient(\React\EventLoop\StreamSelectLoop $loop) : \React\HttpClient\Client
+{
+    $dnsResolverFactory = new React\Dns\Resolver\Factory();
+    $dnsResolver = $dnsResolverFactory->createCached('8.8.8.8', $loop);
+
+    $factory = new React\HttpClient\Factory();
+    return $factory->create($loop, $dnsResolver);
+}
+
+/**
+ * @param string $sitemapUrl
+ * @param string|null $requestLimit
+ * @return array
+ */
+function getSitemapData(string $sitemapUrl, string $requestLimit = null) : array
+{
+    $urls= [];
+    $sitemap = simplexml_load_file($sitemapUrl);
+    foreach ($sitemap as $element) {
+        $urls[] = $element->loc;
+    }
+    if (isset($requestLimit)) {
+        $urls = array_chunk($urls, $requestLimit);
+    }
+    return $urls;
+}
